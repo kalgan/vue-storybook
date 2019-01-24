@@ -1,6 +1,26 @@
 const Vue = require("vue").default;
 const upperFirst = require("lodash").upperFirst;
 const camelCase = require("lodash").camelCase;
+const isPlainObject = require("lodash").isPlainObject;
+
+/**
+ * Normalizes prop passed from knobs attributes
+ * @param {any} prop
+ * @returns {Object}
+ */
+function normalizeProp(prop) {
+  if (!isPlainObject(prop)) {
+    prop = {
+      type: (prop).constructor,
+      default: prop
+    }
+    return prop
+  }
+  if (prop.default && !prop.type) {
+    prop.type = (prop.default).constructor
+  }
+  return prop
+}
 
 function registerStories(req, fileName, sbInstance, plugins, extensions = {}) {
   const {
@@ -23,26 +43,31 @@ function registerStories(req, fileName, sbInstance, plugins, extensions = {}) {
 
   if (!stories) return;
   stories.forEach(story => {
-    let storiesOf = sbInstance(story.group, module);
-    let addFunc;
-    let baseFunc = () => {
-      let data = story.knobs ? eval(`(${story.knobs})`) : {};
+    const storiesOf = sbInstance(story.group, module);
+    const addFunc = () => {
+      let props = story.knobs ? eval(`(${story.knobs})`) : {};
+      Object.keys(props).forEach(key => {
+        props[key] = normalizeProp(props[key])
+      })
       return Object.assign({}, extensions, {
-        data() {
-          return data;
-        },
+        props,
         template: story.template,
         methods: eval(`(${story.methods})`)
       });
     };
 
-    story.notes
-      ? (addFunc = withNotes(story.notes)(baseFunc))
-      : (addFunc = baseFunc);
+    let addParams = {}
 
+    // Notes Addon
+    if (story.notes) {
+      storiesOf.addDecorator(withNotes)
+      addParams.notes = story.notes
+    }
+
+    // Knobs Addon
     story.knobs ? storiesOf.addDecorator(withKnobs) : false;
 
-    storiesOf.add(story.name, addFunc);
+    storiesOf.add(story.name, addFunc, addParams);
 
     const componentName = componentDefault.name || upperFirst(
       camelCase(fileName.replace(/^\.\/[\W_]*?/, "").replace(/\.\w+$/, ""))
